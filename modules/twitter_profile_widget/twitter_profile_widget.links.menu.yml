@@ -1,0 +1,12 @@
+# Twitter widget menu items definition
+twitter_profile_widget.admin_settings:
+  title: "Twitter Profile Widgets"
+  description: 'Configure connection to Twitter.'
+  route_name: twitter_profile_widget.admin_settings
+  parent: system.admin_config_media
+entity.twitter_widget.collection:
+  title: 'Twitter widget list'
+  route_name: entity.twitter_widget.collection
+  description: 'List Twitter widget entities'
+  parent: system.admin_content
+  weight: 100

@@ -1,0 +1,29 @@
+# Twitter widget routing definition
+twitter_widget.settings_tab:
+  route_name: twitter_widget.settings
+  title: 'Settings'
+  base_route: twitter_widget.settings
+
+entity.twitter_widget.canonical:
+  route_name: entity.twitter_widget.canonical
+  base_route: entity.twitter_widget.canonical
+  title: 'View'
+
+entity.twitter_widget.edit_form:
+  route_name: entity.twitter_widget.edit_form
+  base_route: entity.twitter_widget.canonical
+  title: Edit
+
+entity.twitter_widget.delete_form:
+  route_name:  entity.twitter_widget.delete_form
+  base_route:  entity.twitter_widget.canonical
+  title: Delete
+  weight: 10
+
+entity.twitter_widget.collection:
+  title: 'Twitter widgets'
+  route_name: entity.twitter_widget.collection
+  description: 'List Twitter widget (bundles)'
+  parent: system.admin_content
+  base_route: system.admin_content
+  weight: 99

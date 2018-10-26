@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - block_content.type.twitter_widget
+    - field.field.block_content.twitter_widget.field_twitter_widget
+id: block_content.twitter_widget.default
+targetEntityType: block_content
+bundle: twitter_widget
+mode: default
+content:
+  field_twitter_widget:
+    weight: 1
+    label: visually_hidden
+    settings:
+      link: true
+      view_mode: default
+    third_party_settings: {  }
+    type: entity_reference_entity_view
+hidden: {  }
+dependencies:
+  module:
+    - twitter_profile_widget
+  enforced:
+    module:
+      - twitter_profile_widget

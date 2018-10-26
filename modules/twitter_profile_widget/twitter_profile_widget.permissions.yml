@@ -1,0 +1,19 @@
+add twitter widget entities:
+  title: 'Create new Twitter widget entities'
+
+administer twitter widget entities:
+  title: 'Administer Twitter widget entities'
+  description: 'Allow to access the administration form to configure Twitter widget entities.'
+  restrict access: true
+
+delete twitter widget entities:
+  title: 'Delete Twitter widget entities'
+
+edit twitter widget entities:
+  title: 'Edit Twitter widget entities'
+
+view published twitter widget entities:
+  title: 'View published Twitter widget entities'
+
+view unpublished twitter widget entities:
+  title: 'View unpublished Twitter widget entities'

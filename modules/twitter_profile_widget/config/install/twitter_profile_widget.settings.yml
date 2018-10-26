@@ -1,0 +1,11 @@
+twitter_widget_cache_time: 300
+langcode: "en"
+twitter_widget_token: "NO CONNECTION"
+integrate_blocks: TRUE
+expire_internal_cache: FALSE
+dependencies:
+  module:
+    - twitter_profile_widget
+  enforced:
+    module:
+      - twitter_profile_widget

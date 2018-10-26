@@ -1,0 +1,5 @@
+entity.twitter_widget.add_form:
+  route_name: entity.twitter_widget.add_form
+  title: 'Add Twitter widget'
+  appears_on:
+    - entity.twitter_widget.collection

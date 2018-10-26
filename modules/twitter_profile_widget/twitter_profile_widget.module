@@ -1,0 +1,271 @@
+<?php
+
+/**
+ * @file
+ * Contains twitter_profile_widget.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\twitter_profile_widget\TwitterProfile;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Link;
+use Drupal\Core\Url;
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\block_content\BlockContentInterface;
+
+/**
+ * Implements hook_help().
+ */
+function twitter_profile_widget_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the twitter_profile_widget module.
+    case 'help.page.twitter_profile_widget':
+      $output = '';
+      $output .= '<h3>' . t('Installation') . '</h3>';
+      $output .= '<p>' . t('<ol><li>Install as you would normally install a contributed drupal module. See the <a href=":docs">documentation</a> for further information.</li><li>Go to Manage > Extend, and enable the Twitter Profile Widget module (drush en twitter_profile_widget).</li></ol>', [':docs' => 'https://www.drupal.org/documentation/install/modules-themes/modules-8']) . '</p>';
+      $output .= '<h3>' . t('Configuration') . '</h3>';
+      $output .= '<p>' . t('<ol><li>You first need a Twitter App. This is different from the Twitter widget ID, and allows you to connect to the Twitter API. To get a Twitter App, sign in to Twitter and go to <a href=":twitter">https://apps.twitter.com/</a>. Copy the "key" and "secret" associated with your new app.</li><li>After installing the module in Drupal, go to Configuration > Media > Twitter Widgets (<a href=":config">/admin/config/media/twitter_profile_widget</a>). Enter the Twitter App key and secret you created in step 1.</li><li>Go to Content > Twitter widgets (<a href=":widgets">/admin/content/twitter_widget</a>) and create one or more widgets. The "description" is internal, to identify different widgets.</li><li>Now that you have Twitter widgets set up, you can display them in any part of your site via either entity reference or block display (each time you create a widget, it creates a corresponding block at <a href=":blocks">/admin/structure/block/block-content</a>). For example, you could use the built-in Structure > Block Layout > Place Block interface to put the widget on one or more pages. Alternatively, you could use <a href=":context">Context</a> or <a href=":panels">Panels</a> to place the twitter widget block. Or you could create an entity reference field on a node and embed the widget that way.</li></ol>', [
+        ':config' => '/admin/config/media/twitter_profile_widget',
+        ':widgets' => '/admin/content/twitter_widget',
+        ':blocks' => '/admin/structure/block/block-content',
+        ':twitter' => 'https://apps.twitter.com/',
+        ':context' => 'https://www.drupal.org/project/context',
+        ':panels' => 'https://www.drupal.org/project/panels',
+      ]) . '</p>';
+      $output .= '<h3>' . t('Theming') . '</h3>';
+      $output .= '<p>' . t("By design, the display of tweets  provided by this module is minimal. Developers can copy the twitter_widget.html.twig file from the /templates directory and add it to their theme and customize as necessary. To remove the CSS provided by this module, remove the <code>{{ attach_library('twitter_profile_widget/twitter-profile-widget') }}</code> from the twig file, or point it to your own defined library.") . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_entity_insert().
+ *
+ * Upon initial creation of a Twitter widget entity, create a corresponding
+ * block, using the widget label (name) as the block info (description).
+ */
+function twitter_profile_widget_entity_insert(EntityInterface $entity) {
+  // Only act on twitter_widget entities.
+  if ($entity->getEntityTypeId() == 'twitter_widget' && $entity->bundle() == 'twitter_widget') {
+
+    $config = \Drupal::config('twitter_profile_widget.settings');
+    if ($config->get('integrate_blocks')) {
+      $blockEntityManager = \Drupal::service('entity.manager')->getStorage('block_content');
+      // Create a block of type "twitter_widget".
+      $block = $blockEntityManager->create([
+        'type' => 'twitter_widget',
+      ]);
+      // Every block should have a description; strangely its property is not
+      // 'description' but 'info'.
+      $block->info = $entity->get('name')->value;
+      // Assign the twitter widget entity to the block's field_twitter_widget
+      // entity reference field, effectively making the widget a block.
+      $block->field_twitter_widget = $entity;
+
+      $block->save();
+      \Drupal::logger('twitter_profile_widget')->notice('Twitter block "%name" created.',
+        ['%name' => $entity->get('name')->value]);
+    }
+  }
+
+}
+
+/**
+ * Implements hook_entity_delete().
+ *
+ * When a twitter widget is deleted, we want to clean up any blocks that
+ * reference that entity ID, as they will no longer work.
+ */
+function twitter_profile_widget_entity_delete(EntityInterface $entity) {
+  // Only act on twitter_widget entities.
+  if ($entity->getEntityTypeId() == 'twitter_widget' && $entity->bundle() == 'twitter_widget') {
+    $config = \Drupal::config('twitter_profile_widget.settings');
+    if ($config->get('integrate_blocks')) {
+      $entity_type = 'twitter_widget';
+      $ids = \Drupal::entityQuery('block_content')
+        ->condition('type', $entity_type)
+        ->condition('field_twitter_widget.target_id', $entity->get('id')->value)
+        ->execute();
+      if (!empty($ids)) {
+        $storage_handler = \Drupal::entityTypeManager()->getStorage('block_content');
+        $entities = $storage_handler->loadMultiple($ids);
+        $storage_handler->delete($entities);
+        \Drupal::logger('twitter_profile_widgets')->notice('Any Twitter blocks associated with "%name" have been deleted.',
+        ['%name' => $entity->get('name')->value]);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function twitter_profile_widget_theme() {
+  $theme['twitter_widget'] = [
+    'render element' => 'elements',
+    'file' => 'twitter_widget.page.inc',
+    'template' => 'twitter_widget',
+  ];
+  return $theme;
+}
+
+/**
+ * Implements hook_preprocess_HOOK().
+ *
+ * Take the user-entered Twitter "configuration" and return rendered tweets.
+ */
+function twitter_profile_widget_preprocess_twitter_widget(&$variables) {
+  $entity = $variables['elements']['#twitter_widget'];
+  $id = $entity->get('id')->value;
+
+  // Retrieve tweets for this widget.
+  $cache = \Drupal::cache()->get('twitter_widget:' . $id);
+  if (!isset($cache->data)) {
+    $Twitter = new TwitterProfile();
+    $tweets = $Twitter->pull($entity);
+    $config = \Drupal::config('twitter_profile_widget.settings');
+    $age = $config->get('twitter_widget_cache_time');
+    \Drupal::cache()->set('twitter_widget:' . $id, $tweets, time() + $age, ['twitter_widget_view', 'twitter_widget:' . $id]);
+  }
+  else {
+    $tweets = $cache->data;
+  }
+
+  // If the API call returns errors, do not send any data to the template.
+  if ($tweets) {
+    $variables['tweets'] = _twitter_profile_widget_prepare_tweets($tweets, $entity->get('count')->value);
+
+    if ($headline = $entity->get('headline')->value) {
+      $variables['headline'] = $headline;
+    }
+    if ($view_all = $entity->get('view_all')->value) {
+      if ($entity->get('type')->value == 'search') {
+        $params = [
+          'q' => $entity->get('search')->value,
+        ];
+        $getfield = '?' . http_build_query($params);
+        $url = Url::fromUri('https://twitter.com/search' . $getfield);
+      }
+      else {
+        $url = Url::fromUri('https://twitter.com/' . $entity->get('account')->value);
+      }
+
+      $variables['view_all'] = Link::fromTextAndUrl($view_all, $url);
+    }
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_view_alter().
+ */
+function twitter_profile_widget_block_content_view_alter(array &$build, BlockContentInterface $entity, EntityViewDisplayInterface $display) {
+  // Add the 'max age' cache for render cache of twitter widget blocks.
+  if ($entity->bundle() == 'twitter_widget') {
+    $max_age = \Drupal::config('twitter_profile_widget.settings')
+      ->get('twitter_widget_cache_time');
+
+    $cache_permanent = empty($build['#cache']['max-age']) || $build['#cache']['max-age'] === Cache::PERMANENT;
+    if ($cache_permanent || $max_age < $build['#cache']['max-age']) {
+      $build['#cache']['max-age'] = $max_age;
+    }
+  }
+}
+
+/**
+ * Helper to parse Twitter's JSON and return a normalized array of tweets.
+ *
+ * @param string[] $tweets
+ *    An array of tweets, in Twitter class format.
+ * @param int $count
+ *    How many tweets should be displayed.
+ *
+ * @return string[]
+ *    Non-keyed array of tweet elements.
+ */
+function _twitter_profile_widget_prepare_tweets(array $tweets, $count = 5) {
+  $inc = 0;
+
+  $tweets_filtered = [];
+  foreach ($tweets as $tweet) {
+    $inc++;
+    $tweet_actions = '';
+    $tweet->retweet_eyebrow = FALSE;
+
+    // If this is a retweet, use the API-provided sub-element.
+    if (isset($tweet->retweeted_status)) {
+      $id = $tweet->retweeted_status->id;
+      $retweet_user = $tweet->retweeted_status->user->screen_name;
+      $original_user = $tweet->user->name;
+      $original_screen_name = $tweet->user->screen_name;
+      $retweet_link = Url::fromUri('//twitter.com/' . $retweet_user . '/status/' . $id);
+      $user_text = $original_user . ' Retweeted';
+      $user_url = Url::fromUri('//twitter.com/' . $original_screen_name);
+      $user_link = Link::fromTextAndUrl($user_text, $user_url);
+      // Switch $tweet object to its sub-element.
+      $tweet = $tweet->retweeted_status;
+      // Add the retweet eyebrow.
+      $tweet->retweet_link = $retweet_link;
+      $tweet->retweet_user = $user_link;
+    }
+
+    // Prepare the Tweet Action links, based on $tweet->id.
+    $timestamp = strtotime($tweet->created_at);
+    $tweets_filtered[$inc] = [
+      'id'        => (int) $tweet->id,
+      'image'     => _twitter_profile_widget_schema_free_link($tweet->user->profile_image_url),
+      'image_user' => $tweet->user->name,
+      'author'    => $tweet->user->name,
+      'username'  => $tweet->user->screen_name,
+      'text'      => _twitter_profile_widget_parse_twitter_links($tweet->text),
+      'timestamp' => $timestamp,
+      'time_ago' => t('@time ago', ['@time' => \Drupal::service('date.formatter')->formatInterval(REQUEST_TIME - $timestamp)]),
+      'tweet_reply2' => Url::fromUri('//twitter.com/intent/tweet?in_reply_to=' . $tweet->id),
+      'tweet_retweet' => Url::fromUri('//twitter.com/intent/retweet?tweet_id=' . $tweet->id),
+      'tweet_star' => Url::fromUri('//twitter.com/intent/favorite?tweet_id=' . $tweet->id),
+    ];
+    if (isset($tweet->retweet_link)) {
+      $tweets_filtered[$inc]['retweet_link'] = $tweet->retweet_link;
+      $tweets_filtered[$inc]['retweet_user'] = $tweet->retweet_user;
+    }
+    if ($inc >= $count) {
+      break;
+    }
+  }
+  return $tweets_filtered;
+}
+
+/**
+ * Strip 'http://' and 'https://' from a url, and replace it for '//'.
+ */
+function _twitter_profile_widget_schema_free_link($url) {
+  $schemes = ['http://', 'https://'];
+  $url = str_replace($schemes, '//', $url);
+  return $url;
+}
+
+/**
+ * Helper function.
+ *
+ * Parses tweet text and replaces links, at-mentions, and hashtags.
+ *
+ * @param string $text
+ *   String with the tweet.
+ *
+ * @return string
+ *   Converted tweet that has anchor links to Twitter entity types.
+ */
+function _twitter_profile_widget_parse_twitter_links($text) {
+  // Links.
+  $text = preg_replace('@(https?://([-\w\.]+)+(/([\w/_\.]*(\?\S+)?(#\S+)?)?)?)@', '<a href="$1">$1</a>', $text);
+
+  // @ mentions.
+  $text = preg_replace('/@(\w+)/', '<a href="//twitter.com/$1">@$1</a>', $text);
+
+  // Hashtags.
+  $text = preg_replace('/\s#(\w+)/', ' <a href="//twitter.com/search?q=%23$1">#$1</a>', $text);
+
+  return $text;
+}

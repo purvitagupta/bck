@@ -1,0 +1,30 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - block_content.type.twitter_widget
+    - field.field.block_content.twitter_widget.field_twitter_widget
+id: block_content.twitter_widget.default
+targetEntityType: block_content
+bundle: twitter_widget
+mode: default
+content:
+  field_twitter_widget:
+    weight: 3
+    settings: {  }
+    third_party_settings: {  }
+    type: options_select
+  info:
+    type: string_textfield
+    weight: 0
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+hidden: {  }
+dependencies:
+  module:
+    - twitter_profile_widget
+  enforced:
+    module:
+      - twitter_profile_widget
